@@ -1,7 +1,7 @@
 {
-  "name": "@nilskluewer/pi-statusline",
+  "name": "@nilskluewer/pi-cost-transparency-statusline",
   "version": "0.1.0",
-  "description": "Rich terminal status line for Pi showing model, thinking level, token usage, context usage, and cost.",
+  "description": "Cost transparency status line for Pi: full-detail token and cost breakdown (input/output/cache), cache hit rate, context usage, model, and thinking level.",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -10,6 +10,8 @@
     "pi-extension",
     "statusline",
     "status-line",
+    "cost-transparency",
+    "usage",
     "tui",
     "terminal",
     "tokens",
@@ -22,12 +24,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nilskluewer/pi-statusline.git"
+    "url": "git+https://github.com/nilskluewer/pi-cost-transparency-statusline.git"
   },
   "bugs": {
-    "url": "https://github.com/nilskluewer/pi-statusline/issues"
+    "url": "https://github.com/nilskluewer/pi-cost-transparency-statusline/issues"
   },
-  "homepage": "https://github.com/nilskluewer/pi-statusline#readme",
+  "homepage": "https://github.com/nilskluewer/pi-cost-transparency-statusline#readme",
   "files": [
     "extensions",
     "README.md",
