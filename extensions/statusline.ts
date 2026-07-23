@@ -1,7 +1,7 @@
 /**
- * Rich Status Line Extension — Neon Edition
+ * Rich Status Line Extension - Pastel Edition
  *
- * Colour palette inspired by cyan/amber neon-on-dark aesthetic.
+ * Friendly pastel palette designed for dark terminal backgrounds.
  *
  * Line 1:  ~/path/to/cwd (git-branch)          model (thinking)
  * Line 2:  ↑ Input: Nk  ↓ Output: Nk  CacheRead: Nk  CacheWrite: Nk  CacheHit: XX.X%  Context: N/N tokens  🌈progress XX.X%
@@ -22,34 +22,34 @@ const rgb =
 // ── Palette ─────────────────────────────────────────────────────────────────
 const c = {
 	// Navigation (line 1)
-	cwd: rgb(77, 201, 212), //  soft cyan     ~/path
-	branch: rgb(255, 165, 50), //  electric orange  (branch)
-	model: rgb(130, 200, 225), //  ice blue      model name
-	thinking: rgb(255, 185, 50), //  amber         (thinking level)
+	cwd: rgb(137, 207, 240), // pastel sky blue    ~/path
+	branch: rgb(255, 190, 152), // soft peach         (branch)
+	model: rgb(184, 192, 255), // pastel periwinkle  model name
+	thinking: rgb(255, 226, 138), // soft sunshine      (thinking level)
 
-	// Labels — dark neutral so values pop
-	label: rgb(100, 100, 125), //  slate
+	// Labels - muted lavender lets the values stand out
+	label: rgb(170, 166, 194),
 
 	// Token counts (line 2)
-	tokIn: rgb(0, 210, 255), //  electric cyan    ↑ Input
-	tokOut: rgb(255, 130, 0), //  deep orange      ↓ Output
-	tokCacheR: rgb(0, 210, 180), //  teal             CacheRead
-	tokCacheW: rgb(255, 200, 0), //  gold             CacheWrite
-	cacheHit: rgb(0, 255, 200), //  bright seafoam   CacheHit %
-	context: rgb(160, 150, 255), //  periwinkle       Context tokens
-	contextEmpty: rgb(38, 38, 52), //  dark graphite   Context bar empty
-	contextText: rgb(210, 220, 255), //  pale lavender   Context percentage
+	tokIn: rgb(168, 230, 163), // pastel green   ↑ Input
+	tokOut: rgb(255, 154, 162), // pastel red     ↓ Output
+	tokCacheR: rgb(255, 191, 138), // pastel orange  CacheRead
+	tokCacheW: rgb(255, 191, 138), // pastel orange  CacheWrite
+	cacheHit: rgb(255, 191, 138), // pastel orange  CacheHit %
+	context: rgb(195, 177, 225), // soft lavender  Context tokens
+	contextEmpty: rgb(69, 65, 84), // muted plum     Context bar empty
+	contextText: rgb(231, 220, 255), // pale lavender  Context percentage
 
 	// Cost breakdown (line 3)
-	costIn: rgb(255, 100, 90), //  coral            $Input
-	costOut: rgb(255, 165, 0), //  orange           $Output
-	costCacheR: rgb(0, 200, 175), //  teal             $CacheRead
-	costCacheW: rgb(255, 210, 60), //  warm yellow      $CacheWrite
-	costTotal: rgb(80, 255, 160), //  electric green   Total
+	costIn: rgb(168, 230, 163), // pastel green   $Input
+	costOut: rgb(255, 154, 162), // pastel red     $Output
+	costCacheR: rgb(255, 191, 138), // pastel orange  $CacheRead
+	costCacheW: rgb(255, 191, 138), // pastel orange  $CacheWrite
+	costTotal: rgb(152, 228, 198), // pastel mint    Total
 
 	// Structural
-	sep: rgb(55, 55, 75), //  near-black separator
-	divider: rgb(90, 90, 115), //  mid-dark ──
+	sep: rgb(80, 76, 96), // muted plum separator
+	divider: rgb(143, 137, 166), // soft lavender divider
 };
 
 // ── Extension ───────────────────────────────────────────────────────────────
@@ -122,18 +122,18 @@ export default function (pi: ExtensionAPI) {
 						const filled = Math.round((pct / 100) * width);
 						const dangerTint = pct >= 90 ? 0.85 : pct >= 75 ? 0.55 : pct >= 55 ? 0.25 : 0;
 						const rainbow = [
-							[0, 220, 255], // cyan
-							[0, 255, 170], // mint
-							[110, 255, 90], // lime
-							[255, 235, 70], // yellow
-							[255, 150, 40], // orange
-							[255, 70, 70], // red
+							[137, 207, 240], // sky blue
+							[152, 228, 198], // mint
+							[168, 230, 163], // green
+							[255, 226, 138], // sunshine
+							[255, 191, 138], // orange
+							[255, 154, 162], // red
 						] as const;
 						const blendRed = ([r, g, b]: readonly [number, number, number]) =>
 							[
 								Math.round(r + (255 - r) * dangerTint),
-								Math.round(g * (1 - dangerTint)),
-								Math.round(b * (1 - dangerTint)),
+								Math.round(g + (125 - g) * dangerTint),
+								Math.round(b + (135 - b) * dangerTint),
 							] as const;
 						let bar = "";
 						for (let i = 0; i < width; i++) {
@@ -175,22 +175,56 @@ export default function (pi: ExtensionAPI) {
 					const right1 = c.model(modelShort) + "  " + c.thinking(`(${thinking})`);
 					const gap1 = " ".repeat(Math.max(1, width - visibleWidth(left1) - visibleWidth(right1)));
 
+					// Align each token metric with its matching cost metric below it.
+					const metricPairs = [
+						{
+							tokenLabel: "↑ Input",
+							tokenValue: c.tokIn(fmtTok(tokIn)),
+							costLabel: "$Input",
+							costValue: c.costIn(fmtUsd(costIn)),
+						},
+						{
+							tokenLabel: "↓ Output",
+							tokenValue: c.tokOut(fmtTok(tokOut)),
+							costLabel: "$Output",
+							costValue: c.costOut(fmtUsd(costOut)),
+						},
+						{
+							tokenLabel: "CacheRead",
+							tokenValue: c.tokCacheR(fmtTok(tokCacheRead)),
+							costLabel: "$CacheRead",
+							costValue: c.costCacheR(fmtUsd(costCacheRead)),
+						},
+						{
+							tokenLabel: "CacheWrite",
+							tokenValue: c.tokCacheW(cacheWriteDisplay),
+							costLabel: "$CacheWrite",
+							costValue: c.costCacheW(cacheWriteCostDisplay),
+						},
+					];
+					const alignedMetrics = metricPairs.map((pair) => {
+						const tokenLabel = `${pair.tokenLabel}: `;
+						const costLabel = `${pair.costLabel}: `;
+						const labelWidth = Math.max(visibleWidth(tokenLabel), visibleWidth(costLabel));
+						const makeCell = (label: string, value: string) =>
+							c.label(label) + " ".repeat(labelWidth - visibleWidth(label)) + value;
+						const tokenCell = makeCell(tokenLabel, pair.tokenValue);
+						const costCell = makeCell(costLabel, pair.costValue);
+						const cellWidth = Math.max(visibleWidth(tokenCell), visibleWidth(costCell));
+						const padCell = (cell: string) => cell + " ".repeat(cellWidth - visibleWidth(cell));
+						return { token: padCell(tokenCell), cost: padCell(costCell) };
+					});
+
 					// ── Line 2: token counts ─────────────────────────────────────
 					const line2Parts = [
-						lbl("↑ Input") + c.tokIn(fmtTok(tokIn)),
-						lbl("↓ Output") + c.tokOut(fmtTok(tokOut)),
-						lbl("CacheRead") + c.tokCacheR(fmtTok(tokCacheRead)),
-						lbl("CacheWrite") + c.tokCacheW(cacheWriteDisplay),
+						...alignedMetrics.map((metric) => metric.token),
 						lbl("CacheHit") + c.cacheHit(`${cacheHitPct}%`),
 						...(ctxStr ? [lbl("Context") + c.context(ctxStr)] : []),
 					];
 
 					// ── Line 3: cost breakdown ───────────────────────────────────
 					const line3Parts = [
-						lbl("$Input") + c.costIn(fmtUsd(costIn)),
-						lbl("$Output") + c.costOut(fmtUsd(costOut)),
-						lbl("$CacheRead") + c.costCacheR(fmtUsd(costCacheRead)),
-						lbl("$CacheWrite") + c.costCacheW(cacheWriteCostDisplay),
+						...alignedMetrics.map((metric) => metric.cost),
 						c.divider("──") + "  " + lbl("Total") + c.costTotal(fmtUsd(costTotal)),
 					];
 
