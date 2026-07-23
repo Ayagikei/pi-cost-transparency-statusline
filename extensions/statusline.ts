@@ -4,8 +4,9 @@
  * Friendly pastel palette designed for dark terminal backgrounds.
  *
  * Line 1:  ~/path/to/cwd (git-branch)          model (thinking)
- * Line 2:  ↑ Input: Nk  ↓ Output: Nk  CacheRead: Nk  CacheWrite: Nk  CacheHit: XX.X%  Context: N/N tokens  🌈progress XX.X%
- * Line 3:  $Input: X.XXXX  $Output: X.XXXX  $CacheRead: X.XXXX  $CacheWrite: X.XXXX  ── Total: $X.XXXX
+ * Line 2:  ↑ Input: Nk  ↓ Output: Nk    CacheRead: Nk    CacheWrite: Nk  CacheHit: XX.X%
+ * Line 3:  $ Input: X.XXXX  $ Output: X.XXXX  $ CacheRead: X.XXXX  $ CacheWrite: X.XXXX
+ * Line 4:  ── Total: $X.XXXX  Context: N/N tokens  🌈progress XX.X%
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -180,25 +181,25 @@ export default function (pi: ExtensionAPI) {
 						{
 							tokenLabel: "↑ Input",
 							tokenValue: c.tokIn(fmtTok(tokIn)),
-							costLabel: "$Input",
+							costLabel: "$ Input",
 							costValue: c.costIn(fmtUsd(costIn)),
 						},
 						{
 							tokenLabel: "↓ Output",
 							tokenValue: c.tokOut(fmtTok(tokOut)),
-							costLabel: "$Output",
+							costLabel: "$ Output",
 							costValue: c.costOut(fmtUsd(costOut)),
 						},
 						{
-							tokenLabel: "CacheRead",
+							tokenLabel: "  CacheRead",
 							tokenValue: c.tokCacheR(fmtTok(tokCacheRead)),
-							costLabel: "$CacheRead",
+							costLabel: "$ CacheRead",
 							costValue: c.costCacheR(fmtUsd(costCacheRead)),
 						},
 						{
-							tokenLabel: "CacheWrite",
+							tokenLabel: "  CacheWrite",
 							tokenValue: c.tokCacheW(cacheWriteDisplay),
-							costLabel: "$CacheWrite",
+							costLabel: "$ CacheWrite",
 							costValue: c.costCacheW(cacheWriteCostDisplay),
 						},
 					];
@@ -219,19 +220,26 @@ export default function (pi: ExtensionAPI) {
 					const line2Parts = [
 						...alignedMetrics.map((metric) => metric.token),
 						lbl("CacheHit") + c.cacheHit(`${cacheHitPct}%`),
-						...(ctxStr ? [lbl("Context") + c.context(ctxStr)] : []),
 					];
 
 					// ── Line 3: cost breakdown ───────────────────────────────────
-					const line3Parts = [
-						...alignedMetrics.map((metric) => metric.cost),
-						c.divider("──") + "  " + lbl("Total") + c.costTotal(fmtUsd(costTotal)),
-					];
+					const line3Parts = alignedMetrics.map((metric) => metric.cost);
+
+					// ── Line 4: total cost and context usage ──────────────────────
+					const line4 =
+						c.divider("──") +
+						"  " +
+						lbl("Total") +
+						c.costTotal(fmtUsd(costTotal)) +
+						SEP +
+						lbl("Context") +
+						(ctxStr ?? c.context("n/a"));
 
 					return [
 						truncateToWidth(left1 + gap1 + right1, width),
 						truncateToWidth(line2Parts.join(SEP), width),
 						truncateToWidth(line3Parts.join(SEP), width),
+						truncateToWidth(line4, width),
 					];
 				},
 			};
