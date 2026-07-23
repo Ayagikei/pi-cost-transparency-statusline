@@ -3,7 +3,7 @@
  *
  * Friendly pastel palette designed for dark terminal backgrounds.
  *
- * Line 1:  ~/path/to/cwd (git-branch)          model (thinking)
+ * Line 1:  ~/path/to/cwd (git-branch)          Model: model (thinking)
  * Line 2:  ↑ Input: Nk  ↓ Output: Nk    CacheRead: Nk    CacheWrite: Nk  CacheHit: XX.X%
  * Line 3:  $ Input: X.XXXX  $ Output: X.XXXX  $ CacheRead: X.XXXX  $ CacheWrite: X.XXXX
  * Line 4:  ── Total: $X.XXXX  Context: N/N tokens  🌈progress XX.X%
@@ -52,6 +52,8 @@ const c = {
 	sep: rgb(80, 76, 96), // muted plum separator
 	divider: rgb(143, 137, 166), // soft lavender divider
 };
+
+const MODEL_COLUMN = 80;
 
 // ── Extension ───────────────────────────────────────────────────────────────
 export default function (pi: ExtensionAPI) {
@@ -169,12 +171,13 @@ export default function (pi: ExtensionAPI) {
 					const lbl = (s: string) => c.label(s + ": ");
 					const SEP = c.sep("  │  ");
 
-					// ── Line 1: path  (branch)  ·····  model  (thinking) ────────
+					// ── Line 1: path  (branch)  ·····  Model: model  (thinking) ──
 					const cwd = ctx.cwd.startsWith(home) ? `~${ctx.cwd.slice(home.length)}` : ctx.cwd;
 					const branch = footerData.getGitBranch();
 					const left1 = c.cwd(cwd) + (branch ? "  " + c.branch(`(${branch})`) : "");
-					const right1 = c.model(modelShort) + "  " + c.thinking(`(${thinking})`);
-					const gap1 = " ".repeat(Math.max(1, width - visibleWidth(left1) - visibleWidth(right1)));
+					const fixedLeft1 = truncateToWidth(left1, MODEL_COLUMN - 2, "");
+					const model1 = lbl("Model") + c.model(modelShort) + "  " + c.thinking(`(${thinking})`);
+					const gap1 = " ".repeat(MODEL_COLUMN - visibleWidth(fixedLeft1));
 
 					// Align each token metric with its matching cost metric below it.
 					const metricPairs = [
@@ -236,7 +239,7 @@ export default function (pi: ExtensionAPI) {
 						(ctxStr ?? c.context("n/a"));
 
 					return [
-						truncateToWidth(left1 + gap1 + right1, width),
+						truncateToWidth(fixedLeft1 + gap1 + model1, width),
 						truncateToWidth(line2Parts.join(SEP), width),
 						truncateToWidth(line3Parts.join(SEP), width),
 						truncateToWidth(line4, width),
