@@ -3,10 +3,11 @@
  *
  * Friendly pastel palette designed for dark terminal backgrounds.
  *
- * Line 1:  ~/path/to/cwd (git-branch)          Model: model (thinking)
- * Line 2:  ↑ Input: Nk  ↓ Output: Nk    CacheRead: Nk    CacheWrite: Nk  CacheHit: XX.X%
- * Line 3:  $ Input: X.XXXX  $ Output: X.XXXX  $ CacheRead: X.XXXX  $ CacheWrite: X.XXXX
- * Line 4:  ── Total: $X.XXXX  Context: N/N tokens  🌈progress XX.X%
+ * Line 1:  ~/path/to/cwd ⎇ git-branch ┄┄┄┄┄┄┄┄┄ ◈ model · thinking
+ * Line 2:  ▲ Input  ┊  ▼ Output  ┊  ◆ Cache read  ┊  ◆ Cache write  ┊  ✦ Cache hit
+ * Line 3:  Nk       ┊  Nk        ┊  Nk            ┊  Nk             ┊  XX.X%
+ * Line 4:  $X.XXXX  ┊  $X.XXXX   ┊  $X.XXXX       ┊  $X.XXXX        ┊  ├━━━━━━──┤
+ * Line 5:  Context N ⁄ N ├━─────────┤ XX.X%          ∑ Total $X.XXXX
  */
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -118,37 +119,33 @@ export default function (pi: ExtensionAPI) {
 							? ((tokCacheRead / totalInTokens) * 100).toFixed(1)
 							: "0.0";
 
+					const progressRail = (
+						percent: number,
+						fillColor: (text: string) => string,
+						railWidth = 18,
+					): string => {
+						const pct = Math.max(0, Math.min(100, percent || 0));
+						const filled = Math.round((pct / 100) * railWidth);
+						return (
+							c.sep("├") +
+							fillColor("━".repeat(filled)) +
+							c.contextEmpty("─".repeat(railWidth - filled)) +
+							c.sep("┤")
+						);
+					};
+
 					const ctxUsage = ctx.getContextUsage();
 					const contextProgress = (tokens: number, contextWindow: number, percent: number): string => {
 						const pct = Math.max(0, Math.min(100, percent || 0));
-						const width = 18;
-						const filled = Math.round((pct / 100) * width);
-						const dangerTint = pct >= 90 ? 0.85 : pct >= 75 ? 0.55 : pct >= 55 ? 0.25 : 0;
-						const rainbow = [
-							[137, 207, 240], // sky blue
-							[152, 228, 198], // mint
-							[168, 230, 163], // green
-							[255, 226, 138], // sunshine
-							[255, 191, 138], // orange
-							[255, 154, 162], // red
-						] as const;
-						const blendRed = ([r, g, b]: readonly [number, number, number]) =>
-							[
-								Math.round(r + (255 - r) * dangerTint),
-								Math.round(g + (125 - g) * dangerTint),
-								Math.round(b + (135 - b) * dangerTint),
-							] as const;
-						let bar = "";
-						for (let i = 0; i < width; i++) {
-							if (i < filled) {
-								const base = rainbow[Math.min(rainbow.length - 1, Math.floor((i / width) * rainbow.length))]!;
-								const [r, g, b] = blendRed(base);
-								bar += rgb(r, g, b)("█");
-							} else {
-								bar += c.contextEmpty("░");
-							}
-						}
-						return `${c.context(fmtTokExact(tokens))}${c.label("/")}${c.context(fmtTokExact(contextWindow))} tok ${c.sep("[")}${bar}${c.sep("]")} ${c.contextText(`${pct.toFixed(1)}%`)}`;
+						const fillColor =
+							pct >= 90
+								? c.tokOut
+								: pct >= 75
+									? c.tokCacheW
+									: pct >= 55
+										? c.thinking
+										: c.cwd;
+						return `${c.context(fmtTokExact(tokens))}${c.label("/")}${c.context(fmtTokExact(contextWindow))} tok ${progressRail(pct, fillColor)} ${c.contextText(`${pct.toFixed(1)}%`)}`;
 					};
 					const ctxStr = ctxUsage
 						? contextProgress(ctxUsage.tokens, ctxUsage.contextWindow, ctxUsage.percent ?? 0)
@@ -168,81 +165,80 @@ export default function (pi: ExtensionAPI) {
 					const modelShort = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
 
 					// ── Helpers ──────────────────────────────────────────────────
-					const lbl = (s: string) => c.label(s + ": ");
-					const SEP = c.sep("  │  ");
+					const SEP = c.sep("  ┊  ");
 
 					// ── Line 1: path  (branch)  ·····  Model: model  (thinking) ──
 					const cwd = ctx.cwd.startsWith(home) ? `~${ctx.cwd.slice(home.length)}` : ctx.cwd;
 					const branch = footerData.getGitBranch();
-					const left1 = c.cwd(cwd) + (branch ? "  " + c.branch(`(${branch})`) : "");
+					const left1 = c.cwd(cwd) + (branch ? "  " + c.branch(`⎇ ${branch}`) : "");
 					const fixedLeft1 = truncateToWidth(left1, MODEL_COLUMN - 2, "");
-					const model1 = lbl("Model") + c.model(modelShort) + "  " + c.thinking(`(${thinking})`);
-					const gap1 = " ".repeat(MODEL_COLUMN - visibleWidth(fixedLeft1));
+					const leader1 = c.sep(
+						" " + "┄".repeat(Math.max(1, MODEL_COLUMN - visibleWidth(fixedLeft1) - 2)) + " ",
+					);
+					const model1 = c.model(`◈ ${modelShort}`) + c.label(" · ") + c.thinking(thinking);
 
-					// Align each token metric with its matching cost metric below it.
-					const metricPairs = [
+					// Telemetry columns: header printed once, tokens and cost stacked below.
+					const hitRatio = totalInTokens > 0 ? tokCacheRead / totalInTokens : 0;
+					const hitGauge = progressRail(hitRatio * 100, c.cacheHit, 10);
+
+					const columns = [
 						{
-							tokenLabel: "↑ Input",
-							tokenValue: c.tokIn(fmtTok(tokIn)),
-							costLabel: "$ Input",
-							costValue: c.costIn(fmtUsd(costIn)),
+							header: c.tokIn("▲ ") + c.label("Input"),
+							headerWidth: visibleWidth("▲ Input"),
+							tokens: c.tokIn(fmtTok(tokIn)),
+							cost: c.costIn(fmtUsd(costIn)),
 						},
 						{
-							tokenLabel: "↓ Output",
-							tokenValue: c.tokOut(fmtTok(tokOut)),
-							costLabel: "$ Output",
-							costValue: c.costOut(fmtUsd(costOut)),
+							header: c.tokOut("▼ ") + c.label("Output"),
+							headerWidth: visibleWidth("▼ Output"),
+							tokens: c.tokOut(fmtTok(tokOut)),
+							cost: c.costOut(fmtUsd(costOut)),
 						},
 						{
-							tokenLabel: "  CacheRead",
-							tokenValue: c.tokCacheR(fmtTok(tokCacheRead)),
-							costLabel: "$ CacheRead",
-							costValue: c.costCacheR(fmtUsd(costCacheRead)),
+							header: c.tokCacheR("◆ ") + c.label("Cache read"),
+							headerWidth: visibleWidth("◆ Cache read"),
+							tokens: c.tokCacheR(fmtTok(tokCacheRead)),
+							cost: c.costCacheR(fmtUsd(costCacheRead)),
 						},
 						{
-							tokenLabel: "  CacheWrite",
-							tokenValue: c.tokCacheW(cacheWriteDisplay),
-							costLabel: "$ CacheWrite",
-							costValue: c.costCacheW(cacheWriteCostDisplay),
+							header: c.tokCacheW("◆ ") + c.label("Cache write"),
+							headerWidth: visibleWidth("◆ Cache write"),
+							tokens: c.tokCacheW(cacheWriteDisplay),
+							cost: c.costCacheW(cacheWriteCostDisplay),
+						},
+						{
+							header: c.cacheHit("✦ ") + c.label("Cache hit"),
+							headerWidth: visibleWidth("✦ Cache hit"),
+							tokens: c.cacheHit(`${cacheHitPct}%`),
+							cost: hitGauge,
 						},
 					];
-					const alignedMetrics = metricPairs.map((pair) => {
-						const tokenLabel = `${pair.tokenLabel}: `;
-						const costLabel = `${pair.costLabel}: `;
-						const labelWidth = Math.max(visibleWidth(tokenLabel), visibleWidth(costLabel));
-						const makeCell = (label: string, value: string) =>
-							c.label(label) + " ".repeat(labelWidth - visibleWidth(label)) + value;
-						const tokenCell = makeCell(tokenLabel, pair.tokenValue);
-						const costCell = makeCell(costLabel, pair.costValue);
-						const cellWidth = Math.max(visibleWidth(tokenCell), visibleWidth(costCell));
-						const padCell = (cell: string) => cell + " ".repeat(cellWidth - visibleWidth(cell));
-						return { token: padCell(tokenCell), cost: padCell(costCell) };
+					const cells = columns.map((col) => {
+						const colWidth = Math.max(col.headerWidth, visibleWidth(col.tokens), visibleWidth(col.cost));
+						const pad = (cell: string) => cell + " ".repeat(colWidth - visibleWidth(cell));
+						return {
+							header: pad(col.header),
+							tokens: pad(col.tokens),
+							cost: pad(col.cost),
+						};
 					});
 
-					// ── Line 2: token counts ─────────────────────────────────────
-					const line2Parts = [
-						...alignedMetrics.map((metric) => metric.token),
-						lbl("CacheHit") + c.cacheHit(`${cacheHitPct}%`),
-					];
+					// Lines 2-4: column headers, token row, cost row.
+					const line2 = cells.map((cell) => cell.header).join(SEP);
+					const line3 = cells.map((cell) => cell.tokens).join(SEP);
+					const line4 = cells.map((cell) => cell.cost).join(SEP);
 
-					// ── Line 3: cost breakdown ───────────────────────────────────
-					const line3Parts = alignedMetrics.map((metric) => metric.cost);
-
-					// ── Line 4: total cost and context usage ──────────────────────
-					const line4 =
-						c.divider("──") +
-						"  " +
-						lbl("Total") +
-						c.costTotal(fmtUsd(costTotal)) +
-						SEP +
-						lbl("Context") +
-						(ctxStr ?? c.context("n/a"));
+					// ── Line 5: context gauge ····· ∑ TOTAL right-aligned ────────
+					const left5 = c.label("Context ") + (ctxStr ?? c.context("n/a"));
+					const total5 = c.costTotal("∑ ") + c.label("Total ") + c.costTotal(fmtUsd(costTotal));
+					const gap5 = " ".repeat(Math.max(2, width - visibleWidth(left5) - visibleWidth(total5)));
 
 					return [
-						truncateToWidth(fixedLeft1 + gap1 + model1, width),
-						truncateToWidth(line2Parts.join(SEP), width),
-						truncateToWidth(line3Parts.join(SEP), width),
+						truncateToWidth(fixedLeft1 + leader1 + model1, width),
+						truncateToWidth(line2, width),
+						truncateToWidth(line3, width),
 						truncateToWidth(line4, width),
+						truncateToWidth(left5 + gap5 + total5, width),
 					];
 				},
 			};
