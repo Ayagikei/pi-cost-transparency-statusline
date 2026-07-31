@@ -147,9 +147,11 @@ export default function (pi: ExtensionAPI) {
 										: c.cwd;
 						return `${c.context(fmtTokExact(tokens))}${c.label("/")}${c.context(fmtTokExact(contextWindow))} tok ${progressRail(pct, fillColor)} ${c.contextText(`${pct.toFixed(1)}%`)}`;
 					};
-					const ctxStr = ctxUsage
-						? contextProgress(ctxUsage.tokens, ctxUsage.contextWindow, ctxUsage.percent ?? 0)
-						: null;
+					// Pi reports an unknown token count while compaction is in progress.
+					const ctxStr =
+						ctxUsage?.tokens != null
+							? contextProgress(ctxUsage.tokens, ctxUsage.contextWindow, ctxUsage.percent ?? 0)
+							: null;
 
 					const thinkingLabels: Record<string, string> = {
 						off: "off",
