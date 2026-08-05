@@ -4,14 +4,17 @@ A cost transparency status line for the [Pi coding agent](https://pi.dev/).
 
 ![Pi cost transparency status line showing its pastel sci-fi telemetry dashboard](./assets/statusline-preview.png)
 
-It replaces Pi's footer with a compact pastel telemetry dashboard that makes token usage and spend fully transparent:
+It replaces Pi's footer with a compact pastel telemetry dashboard that makes token usage and estimated spend transparent:
 
 - current working directory and Git branch
 - active model and thinking level
-- accumulated input/output/cache-read/cache-write tokens
+- accumulated input/output/cache-read/cache-write tokens across the session
 - cache hit rate with a colored progress rail
 - context window usage with a colored progress rail
-- full cost breakdown: input, output, cache read, cache write, and total
+- estimated cost breakdown: input, output, cache read, cache write, and total
+
+The dollar values are calculated from Pi's model catalog and are estimates, not provider invoices.
+Subscription and gateway providers can use different billing units, allowances, discounts, or rounding.
 
 ## Install
 

@@ -7,10 +7,10 @@
  * Line 2:  ▲ Input  ┊  ▼ Output  ┊  ◆ Cache read  ┊  ◆ Cache write  ┊  ✦ Cache hit
  * Line 3:  Nk       ┊  Nk        ┊  Nk            ┊  Nk             ┊  XX.X%
  * Line 4:  $X.XXXX  ┊  $X.XXXX   ┊  $X.XXXX       ┊  $X.XXXX        ┊  ├━━━━━━──┤
- * Line 5:  Context N ⁄ N ├━─────────┤ XX.X%          ∑ Total $X.XXXX
+ * Line 5:  Context N ⁄ N ├━─────────┤ XX.X%          ∑ Est. total $X.XXXX
  */
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type { Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
@@ -56,6 +56,44 @@ const c = {
 
 const MODEL_COLUMN = 80;
 
+interface UsageTotals {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	costInput: number;
+	costOutput: number;
+	costCacheRead: number;
+	costCacheWrite: number;
+	costTotal: number;
+}
+
+function createUsageTotals(): UsageTotals {
+	return {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		costInput: 0,
+		costOutput: 0,
+		costCacheRead: 0,
+		costCacheWrite: 0,
+		costTotal: 0,
+	};
+}
+
+function addUsageToTotals(totals: UsageTotals, usage: Usage): void {
+	totals.input += usage.input;
+	totals.output += usage.output;
+	totals.cacheRead += usage.cacheRead;
+	totals.cacheWrite += usage.cacheWrite;
+	totals.costInput += usage.cost.input;
+	totals.costOutput += usage.cost.output;
+	totals.costCacheRead += usage.cost.cacheRead;
+	totals.costCacheWrite += usage.cost.cacheWrite;
+	totals.costTotal += usage.cost.total;
+}
+
 // ── Extension ───────────────────────────────────────────────────────────────
 export default function (pi: ExtensionAPI) {
 	let requestRender: (() => void) | undefined;
@@ -74,31 +112,32 @@ export default function (pi: ExtensionAPI) {
 				},
 				invalidate() {},
 				render(width: number): string[] {
-					// ── Accumulate stats ─────────────────────────────────────────
-					let tokIn = 0,
-						tokOut = 0,
-						tokCacheRead = 0,
-						tokCacheWrite = 0;
-					let costIn = 0,
-						costOut = 0,
-						costCacheRead = 0,
-						costCacheWrite = 0;
-
-					for (const e of ctx.sessionManager.getBranch()) {
-						if (e.type === "message" && e.message.role === "assistant") {
-							const m = e.message as AssistantMessage;
-							tokIn += m.usage.input;
-							tokOut += m.usage.output;
-							tokCacheRead += m.usage.cacheRead;
-							tokCacheWrite += m.usage.cacheWrite;
-							costIn += m.usage.cost.input;
-							costOut += m.usage.cost.output;
-							costCacheRead += m.usage.cost.cacheRead;
-							costCacheWrite += m.usage.cost.cacheWrite;
+					// Match Pi's own session totals: include all entries, including
+					// nested tool usage and compaction/branch-summary generation.
+					const usageTotals = createUsageTotals();
+					for (const e of ctx.sessionManager.getEntries()) {
+						let usage: Usage | undefined;
+						if (e.type === "message") {
+							if (e.message.role === "assistant") {
+								usage = e.message.usage;
+							} else if (e.message.role === "toolResult") {
+								usage = e.message.usage;
+							}
+						} else if ((e.type === "compaction" || e.type === "branch_summary") && e.usage) {
+							usage = e.usage;
 						}
+						if (usage) addUsageToTotals(usageTotals, usage);
 					}
 
-					const costTotal = costIn + costOut + costCacheRead + costCacheWrite;
+					const tokIn = usageTotals.input;
+					const tokOut = usageTotals.output;
+					const tokCacheRead = usageTotals.cacheRead;
+					const tokCacheWrite = usageTotals.cacheWrite;
+					const costIn = usageTotals.costInput;
+					const costOut = usageTotals.costOutput;
+					const costCacheRead = usageTotals.costCacheRead;
+					const costCacheWrite = usageTotals.costCacheWrite;
+					const costTotal = usageTotals.costTotal;
 
 					// ── Formatters ───────────────────────────────────────────────
 					const fmtTok = (n: number): string => {
@@ -149,8 +188,8 @@ export default function (pi: ExtensionAPI) {
 					};
 					// Pi reports an unknown token count while compaction is in progress.
 					const ctxStr =
-						ctxUsage?.tokens != null
-							? contextProgress(ctxUsage.tokens, ctxUsage.contextWindow, ctxUsage.percent ?? 0)
+						ctxUsage?.tokens != null && ctxUsage.percent != null
+							? contextProgress(ctxUsage.tokens, ctxUsage.contextWindow, ctxUsage.percent)
 							: null;
 
 					const thinkingLabels: Record<string, string> = {
@@ -230,9 +269,10 @@ export default function (pi: ExtensionAPI) {
 					const line3 = cells.map((cell) => cell.tokens).join(SEP);
 					const line4 = cells.map((cell) => cell.cost).join(SEP);
 
-					// ── Line 5: context gauge ····· ∑ TOTAL right-aligned ────────
+					// ── Line 5: context gauge ····· ∑ EST. TOTAL right-aligned ─────
 					const left5 = c.label("Context ") + (ctxStr ?? c.context("n/a"));
-					const total5 = c.costTotal("∑ ") + c.label("Total ") + c.costTotal(fmtUsd(costTotal));
+					// Pi stores model-catalog estimates, not provider invoices.
+					const total5 = c.costTotal("∑ ") + c.label("Est. total ") + c.costTotal(fmtUsd(costTotal));
 					const gap5 = " ".repeat(Math.max(2, width - visibleWidth(left5) - visibleWidth(total5)));
 
 					return [
@@ -248,6 +288,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_end", async () => {
+		requestRender?.();
+	});
+	pi.on("session_compact", async () => {
 		requestRender?.();
 	});
 	pi.on("model_select", async () => {
