@@ -13,7 +13,13 @@ It replaces Pi's footer with a compact pastel telemetry dashboard that makes tok
 - context window usage with a colored progress rail
 - estimated cost breakdown: input, output, cache read, cache write, and total
 
-The dollar values are calculated from Pi's model catalog and are estimates, not provider invoices.
+For GitHub Copilot, the statusline uses Pi's current model catalog and recalculates the live estimate from the current session usage.
+The catalog is refreshed in the background when a session starts.
+
+A `Cache write 1h` label means that GitHub Copilot reported one-hour prompt-cache writes.
+Pi prices those writes at twice the model's base input rate, so Claude Opus 5 cache writes can be `$10/M` instead of the five-minute `$6.25/M` rate.
+
+The dollar values are estimates, not provider invoices.
 Subscription and gateway providers can use different billing units, allowances, discounts, or rounding.
 
 ## Install

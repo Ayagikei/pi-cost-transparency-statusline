@@ -4,13 +4,13 @@
  * Friendly pastel palette designed for dark terminal backgrounds.
  *
  * Line 1:  ~/path/to/cwd ⎇ git-branch ┄┄┄┄┄┄┄┄┄ ◈ model · thinking
- * Line 2:  ▲ Input  ┊  ▼ Output  ┊  ◆ Cache read  ┊  ◆ Cache write  ┊  ✦ Cache hit
+ * Line 2:  ▲ Input  ┊  ▼ Output  ┊  ◆ Cache read  ┊  ◆ Cache write [5m/1h]  ┊  ✦ Cache hit
  * Line 3:  Nk       ┊  Nk        ┊  Nk            ┊  Nk             ┊  XX.X%
  * Line 4:  $X.XXXX  ┊  $X.XXXX   ┊  $X.XXXX       ┊  $X.XXXX        ┊  ├━━━━━━──┤
  * Line 5:  Context N ⁄ N ├━─────────┤ XX.X%          ∑ Est. total $X.XXXX
  */
 
-import type { Usage } from "@earendil-works/pi-ai";
+import { calculateCost, type Api, type Model, type Usage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
@@ -61,6 +61,7 @@ interface UsageTotals {
 	output: number;
 	cacheRead: number;
 	cacheWrite: number;
+	cacheWrite1h: number;
 	costInput: number;
 	costOutput: number;
 	costCacheRead: number;
@@ -74,6 +75,7 @@ function createUsageTotals(): UsageTotals {
 		output: 0,
 		cacheRead: 0,
 		cacheWrite: 0,
+		cacheWrite1h: 0,
 		costInput: 0,
 		costOutput: 0,
 		costCacheRead: 0,
@@ -82,16 +84,30 @@ function createUsageTotals(): UsageTotals {
 	};
 }
 
-function addUsageToTotals(totals: UsageTotals, usage: Usage): void {
+function addUsageToTotals(totals: UsageTotals, usage: Usage, cost = usage.cost): void {
 	totals.input += usage.input;
 	totals.output += usage.output;
 	totals.cacheRead += usage.cacheRead;
 	totals.cacheWrite += usage.cacheWrite;
-	totals.costInput += usage.cost.input;
-	totals.costOutput += usage.cost.output;
-	totals.costCacheRead += usage.cost.cacheRead;
-	totals.costCacheWrite += usage.cost.cacheWrite;
-	totals.costTotal += usage.cost.total;
+	totals.cacheWrite1h += usage.cacheWrite1h ?? 0;
+	totals.costInput += cost.input;
+	totals.costOutput += cost.output;
+	totals.costCacheRead += cost.cacheRead;
+	totals.costCacheWrite += cost.cacheWrite;
+	totals.costTotal += cost.total;
+}
+
+function getCurrentCopilotCost(usage: Usage, model: Model<Api> | undefined): Usage["cost"] {
+	if (model?.provider !== "github-copilot") return usage.cost;
+
+	// Recalculate against Pi's current Copilot catalog instead of trusting a
+	// persisted Usage.cost value. This keeps the live display correct when the
+	// catalog changes during a session and preserves Pi's cacheWrite1h logic.
+	const currentUsage: Usage = {
+		...usage,
+		cost: { ...usage.cost },
+	};
+	return calculateCost(model, currentUsage);
 }
 
 // ── Extension ───────────────────────────────────────────────────────────────
@@ -99,6 +115,13 @@ export default function (pi: ExtensionAPI) {
 	let requestRender: (() => void) | undefined;
 
 	pi.on("session_start", async (_event, ctx) => {
+		// Pi normally refreshes remote catalogs on startup. Refresh again in the
+		// background for Copilot so the live estimate can use current rates without
+		// making the footer render path network-dependent.
+		if (ctx.model?.provider === "github-copilot") {
+			void ctx.modelRegistry.refresh().then(() => requestRender?.()).catch(() => undefined);
+		}
+
 		const home = homedir();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -115,24 +138,38 @@ export default function (pi: ExtensionAPI) {
 					// Match Pi's own session totals: include all entries, including
 					// nested tool usage and compaction/branch-summary generation.
 					const usageTotals = createUsageTotals();
+					const activeModel = ctx.model as Model<Api> | undefined;
+					const currentModel = activeModel
+						? ((ctx.modelRegistry.find(activeModel.provider, activeModel.id) as Model<Api> | undefined) ?? activeModel)
+						: undefined;
 					for (const e of ctx.sessionManager.getEntries()) {
 						let usage: Usage | undefined;
+						let usageModel: Model<Api> | undefined;
 						if (e.type === "message") {
 							if (e.message.role === "assistant") {
 								usage = e.message.usage;
+								usageModel = ctx.modelRegistry.find(
+									e.message.provider,
+									e.message.responseModel ?? e.message.model,
+								) as Model<Api> | undefined;
 							} else if (e.message.role === "toolResult") {
 								usage = e.message.usage;
+								usageModel = currentModel;
 							}
 						} else if ((e.type === "compaction" || e.type === "branch_summary") && e.usage) {
 							usage = e.usage;
+							usageModel = currentModel;
 						}
-						if (usage) addUsageToTotals(usageTotals, usage);
+						if (usage) {
+							addUsageToTotals(usageTotals, usage, getCurrentCopilotCost(usage, usageModel));
+						}
 					}
 
 					const tokIn = usageTotals.input;
 					const tokOut = usageTotals.output;
 					const tokCacheRead = usageTotals.cacheRead;
 					const tokCacheWrite = usageTotals.cacheWrite;
+					const tokCacheWrite1h = usageTotals.cacheWrite1h;
 					const costIn = usageTotals.costInput;
 					const costOut = usageTotals.costOutput;
 					const costCacheRead = usageTotals.costCacheRead;
@@ -149,7 +186,14 @@ export default function (pi: ExtensionAPI) {
 					const fmtUsd = (n: number): string => `$${n.toFixed(4)}`;
 
 					// ── Derived stats ────────────────────────────────────────────
-					const cacheWriteSupported = tokCacheWrite > 0 || (ctx.model?.cost.cacheWrite ?? 0) > 0;
+					const cacheWriteSupported = tokCacheWrite > 0 || (currentModel?.cost.cacheWrite ?? 0) > 0;
+					const cacheWriteMode =
+						tokCacheWrite1h > 0
+							? tokCacheWrite1h === tokCacheWrite
+								? " 1h"
+								: " mixed"
+							: "";
+					const cacheWriteLabel = `Cache write${cacheWriteMode}`;
 					const cacheWriteDisplay = cacheWriteSupported ? fmtTok(tokCacheWrite) : "n/a";
 					const cacheWriteCostDisplay = cacheWriteSupported ? fmtUsd(costCacheWrite) : "n/a";
 					const totalInTokens = tokIn + tokCacheRead + tokCacheWrite;
@@ -242,8 +286,8 @@ export default function (pi: ExtensionAPI) {
 							cost: c.costCacheR(fmtUsd(costCacheRead)),
 						},
 						{
-							header: c.tokCacheW("◆ ") + c.label("Cache write"),
-							headerWidth: visibleWidth("◆ Cache write"),
+							header: c.tokCacheW("◆ ") + c.label(cacheWriteLabel),
+							headerWidth: visibleWidth(`◆ ${cacheWriteLabel}`),
 							tokens: c.tokCacheW(cacheWriteDisplay),
 							cost: c.costCacheW(cacheWriteCostDisplay),
 						},
