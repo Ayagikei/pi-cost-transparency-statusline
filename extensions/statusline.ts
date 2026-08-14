@@ -67,12 +67,20 @@ export default function (pi: ExtensionAPI) {
 			requestRender = () => tui.requestRender();
 			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
 
+			// Force an initial render after the footer is mounted. Without this,
+			// the footer stays blank until the first turn_end/session_compact
+			// event fires — which is the "need to select the bottom area to see
+			// it" issue in Ghostty and other terminals.
+			tui.requestRender();
+
 			return {
 				dispose() {
 					requestRender = undefined;
 					unsubBranch();
 				},
-				invalidate() {},
+				invalidate() {
+					requestRender?.();
+				},
 				render(width: number): string[] {
 					// ── Accumulate stats ─────────────────────────────────────────
 					let tokIn = 0,
@@ -162,7 +170,9 @@ export default function (pi: ExtensionAPI) {
 					const thinking = thinkingLabels[pi.getThinkingLevel()] ?? pi.getThinkingLevel();
 
 					const modelId = ctx.model?.id ?? "no model";
+					const provider = ctx.model?.provider ?? "";
 					const modelShort = modelId.includes("/") ? modelId.split("/").pop()! : modelId;
+					const modelDisplay = provider ? `${provider}/${modelShort}` : modelShort;
 
 					// ── Helpers ──────────────────────────────────────────────────
 					const SEP = c.sep("  ┊  ");
@@ -175,7 +185,7 @@ export default function (pi: ExtensionAPI) {
 					const leader1 = c.sep(
 						" " + "┄".repeat(Math.max(1, MODEL_COLUMN - visibleWidth(fixedLeft1) - 2)) + " ",
 					);
-					const model1 = c.model(`◈ ${modelShort}`) + c.label(" · ") + c.thinking(thinking);
+					const model1 = c.model(`◈ ${modelDisplay}`) + c.label(" · ") + c.thinking(thinking);
 
 					// Telemetry columns: header printed once, tokens and cost stacked below.
 					const hitRatio = totalInTokens > 0 ? tokCacheRead / totalInTokens : 0;
