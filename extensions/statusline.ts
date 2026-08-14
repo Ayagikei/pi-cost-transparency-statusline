@@ -243,13 +243,26 @@ export default function (pi: ExtensionAPI) {
 					const total5 = c.costTotal("∑ ") + c.label("Total ") + c.costTotal(fmtUsd(costTotal));
 					const gap5 = " ".repeat(Math.max(2, width - visibleWidth(left5) - visibleWidth(total5)));
 
-					return [
+					// ── Line 6: extension statuses (ponytail, MCP, permission mode, …)
+					const statuses = footerData.getExtensionStatuses?.();
+					const statusLine = statuses && statuses.size > 0
+						? truncateToWidth(
+							Array.from(statuses.values())
+								.sort((a, b) => a.localeCompare(b))
+								.join("  "),
+								width,
+							)
+						: "";
+
+					const lines = [
 						truncateToWidth(fixedLeft1 + leader1 + model1, width),
 						truncateToWidth(line2, width),
 						truncateToWidth(line3, width),
 						truncateToWidth(line4, width),
 						truncateToWidth(left5 + gap5 + total5, width),
 					];
+					if (statusLine) lines.push(statusLine);
+					return lines;
 				},
 			};
 		});
