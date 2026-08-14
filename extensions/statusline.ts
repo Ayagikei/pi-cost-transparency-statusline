@@ -177,37 +177,15 @@ export default function (pi: ExtensionAPI) {
 					// ── Helpers ──────────────────────────────────────────────────
 					const SEP = c.sep("  ┊  ");
 
-					// ── Line 1: path  (branch)  ┄┄ statuses ┄┄  Model: model  (thinking) ──
+					// ── Line 1: path  (branch)  ·····  Model: model  (thinking) ──
 					const cwd = ctx.cwd.startsWith(home) ? `~${ctx.cwd.slice(home.length)}` : ctx.cwd;
 					const branch = footerData.getGitBranch();
 					const left1 = c.cwd(cwd) + (branch ? "  " + c.branch(`⎇ ${branch}`) : "");
 					const fixedLeft1 = truncateToWidth(left1, MODEL_COLUMN - 2, "");
-
-					// Extension statuses go in the leader area between path and model.
-					const statuses = footerData.getExtensionStatuses?.();
-					const statusText = statuses && statuses.size > 0
-						? Array.from(statuses.values()).sort((a, b) => a.localeCompare(b)).join("  ")
-						: "";
+					const leader1 = c.sep(
+						" " + "┄".repeat(Math.max(1, MODEL_COLUMN - visibleWidth(fixedLeft1) - 2)) + " ",
+					);
 					const model1 = c.model(`◈ ${modelDisplay}`) + c.label(" · ") + c.thinking(thinking);
-
-					// Build the leader: ┄ statuses ┄ (or just ┄┄┄ if no statuses)
-					const modelStart = MODEL_COLUMN;
-					const leftWidth = visibleWidth(fixedLeft1);
-					const modelWidth = visibleWidth(model1);
-					const gapForStatus = modelStart - leftWidth - modelWidth;
-					let leader1: string;
-					if (statusText && gapForStatus > visibleWidth(statusText) + 6) {
-						// ┄ status ┄ — statuses fit between the dots
-						const statusW = visibleWidth(statusText);
-						const dotsBefore = Math.max(1, Math.floor((gapForStatus - statusW - 2) / 2));
-						const dotsAfter = Math.max(1, gapForStatus - statusW - 2 - dotsBefore);
-						leader1 = c.sep(" " + "┄".repeat(dotsBefore) + " ") + statusText + c.sep(" " + "┄".repeat(dotsAfter) + " ");
-					} else {
-						// No statuses or not enough room — original dotted leader
-						leader1 = c.sep(
-							" " + "┄".repeat(Math.max(1, MODEL_COLUMN - leftWidth - 2)) + " ",
-						);
-					}
 
 					// Telemetry columns: header printed once, tokens and cost stacked below.
 					const hitRatio = totalInTokens > 0 ? tokCacheRead / totalInTokens : 0;
@@ -260,10 +238,29 @@ export default function (pi: ExtensionAPI) {
 					const line3 = cells.map((cell) => cell.tokens).join(SEP);
 					const line4 = cells.map((cell) => cell.cost).join(SEP);
 
-					// ── Line 5: context gauge ····· ∑ TOTAL right-aligned ────────
+					// ── Line 5: context gauge ····· statuses ····· ∑ TOTAL right-aligned ──
 					const left5 = c.label("Context ") + (ctxStr ?? c.context("n/a"));
 					const total5 = c.costTotal("∑ ") + c.label("Total ") + c.costTotal(fmtUsd(costTotal));
-					const gap5 = " ".repeat(Math.max(2, width - visibleWidth(left5) - visibleWidth(total5)));
+
+					// Extension statuses go in the gap between context and total.
+					const statuses = footerData.getExtensionStatuses?.();
+					const statusText = statuses && statuses.size > 0
+						? Array.from(statuses.values()).sort((a, b) => a.localeCompare(b)).join("  ")
+						: "";
+					const leftW = visibleWidth(left5);
+					const totalW = visibleWidth(total5);
+					const gapWidth = Math.max(2, width - leftW - totalW);
+					let gap5: string;
+					if (statusText && visibleWidth(statusText) + 4 <= gapWidth) {
+						// Center statuses in the gap: spaces + status + spaces
+						const statusW = visibleWidth(statusText);
+						const spare = gapWidth - statusW;
+						const padLeft = Math.max(1, Math.floor(spare / 2));
+						const padRight = Math.max(1, spare - padLeft);
+						gap5 = " ".repeat(padLeft) + statusText + " ".repeat(padRight);
+					} else {
+						gap5 = " ".repeat(gapWidth);
+					}
 
 					return [
 						truncateToWidth(fixedLeft1 + leader1 + model1, width),
