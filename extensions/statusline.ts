@@ -262,13 +262,20 @@ export default function (pi: ExtensionAPI) {
 						gap5 = " ".repeat(gapWidth);
 					}
 
-					return [
+					const lines = [
 						truncateToWidth(fixedLeft1 + leader1 + model1, width),
 						truncateToWidth(line2, width),
 						truncateToWidth(line3, width),
 						truncateToWidth(line4, width),
 						truncateToWidth(left5 + gap5 + total5, width),
 					];
+
+					// If statuses didn't fit in the line 5 gap, append on line 6.
+					if (statusText && visibleWidth(statusText) + 4 > gapWidth) {
+						lines.push(truncateToWidth(statusText, width));
+					}
+
+					return lines;
 				},
 			};
 		});
