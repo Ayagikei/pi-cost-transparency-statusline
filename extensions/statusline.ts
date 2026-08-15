@@ -114,7 +114,7 @@ export default function (pi: ExtensionAPI) {
 						if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
 						return `${n}`;
 					};
-					const fmtTokExact = (n: number): string => n.toLocaleString("en-US");
+					const fmtTokExact = (n: number | null | undefined): string => (n ?? 0).toLocaleString("en-US");
 					const fmtUsd = (n: number): string => `$${n.toFixed(4)}`;
 
 					// ── Derived stats ────────────────────────────────────────────
