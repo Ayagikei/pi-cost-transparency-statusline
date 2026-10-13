@@ -10,7 +10,8 @@
  * Line 5:  Context N ⁄ N ├━─────────┤ XX.X%          ∑ Total $X.XXXX
  */
 
-import type { AssistantMessage } from "@earendil-works/pi-ai";
+import { cacheMissNotice } from "./cache-miss.ts";
+import { collectUsage, rpcUsageLines } from "./usage.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { homedir } from "node:os";
@@ -61,6 +62,12 @@ export default function (pi: ExtensionAPI) {
 	let requestRender: (() => void) | undefined;
 
 	pi.on("session_start", async (_event, ctx) => {
+		requestRender = undefined;
+		if (ctx.mode === "rpc") {
+			requestRender = () => ctx.ui.setWidget("用量费用明细", rpcUsageLines(ctx), { placement: "belowEditor" });
+			requestRender();
+			return;
+		}
 		const home = homedir();
 
 		ctx.ui.setFooter((tui, theme, footerData) => {
@@ -83,28 +90,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				render(width: number): string[] {
 					// ── Accumulate stats ─────────────────────────────────────────
-					let tokIn = 0,
-						tokOut = 0,
-						tokCacheRead = 0,
-						tokCacheWrite = 0;
-					let costIn = 0,
-						costOut = 0,
-						costCacheRead = 0,
-						costCacheWrite = 0;
-
-					for (const e of ctx.sessionManager.getBranch()) {
-						if (e.type === "message" && e.message.role === "assistant") {
-							const m = e.message as AssistantMessage;
-							tokIn += m.usage.input;
-							tokOut += m.usage.output;
-							tokCacheRead += m.usage.cacheRead;
-							tokCacheWrite += m.usage.cacheWrite;
-							costIn += m.usage.cost.input;
-							costOut += m.usage.cost.output;
-							costCacheRead += m.usage.cost.cacheRead;
-							costCacheWrite += m.usage.cost.cacheWrite;
-						}
-					}
+					const { tokIn, tokOut, tokCacheRead, tokCacheWrite, costIn, costOut, costCacheRead, costCacheWrite } = collectUsage(ctx);
 
 					const costTotal = costIn + costOut + costCacheRead + costCacheWrite;
 
@@ -281,9 +267,20 @@ export default function (pi: ExtensionAPI) {
 		});
 	});
 
+	pi.on("message_end", async (event, ctx) => {
+		// Pi already draws this in its terminal. RPC clients need a UI event instead.
+		if (ctx.mode !== "rpc" || event.message.role !== "assistant") return;
+		// message_end runs before persistence, so getBranch excludes this request.
+		const notice = cacheMissNotice(ctx.sessionManager.getBranch(), event.message,
+			(provider, model) => ctx.modelRegistry.find(provider, model));
+		if (notice) ctx.ui.notify(notice, "warning");
+	});
+
 	pi.on("turn_end", async () => {
 		requestRender?.();
 	});
+	pi.on("session_shutdown", async () => { requestRender = undefined; });
+
 	pi.on("model_select", async () => {
 		requestRender?.();
 	});
